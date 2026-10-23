@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>نظام المحاسبة</title>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--tx:#1b1f2a;--mut:#6b7280;--pri:#1f3864;--bd:#d6dae3;--in:#fffbe0;--ok:#1e7a3c;--bad:#b42318;color-scheme:light;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12151c;--card:#1c212b;--tx:#e8eaf0;--mut:#9aa3b2;--pri:#4f7cc7;--bd:#323a49;--in:#2a2a14;--ok:#4ade80;--bad:#f87171;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12151c;--card:#1c212b;--tx:#e8eaf0;--mut:#9aa3b2;--pri:#4f7cc7;--bd:#323a49;--in:#2a2a14;--ok:#4ade80;--bad:#f87171;color-scheme:dark}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--tx);font-family:Arial,Tahoma,sans-serif;font-size:16px;padding:14px;max-width:560px;margin:auto}
+h1,h2{margin:6px 0 12px;font-size:22px;color:var(--pri)}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:12px}
+label{display:block;font-size:14px;color:var(--mut);margin:10px 0 4px}
+input,select{width:100%;padding:12px;font-size:16px;border:1px solid var(--bd);border-radius:10px;background:var(--in);color:var(--tx)}
+button{font-family:inherit;font-size:17px;border:0;border-radius:12px;padding:14px;background:var(--pri);color:#fff;width:100%;margin-top:14px}
+button.big{font-size:20px;padding:22px;margin:0 0 12px}
+button.sm{width:auto;padding:8px 12px;font-size:14px;margin:0}
+button.ghost{background:transparent;color:var(--pri);border:1px solid var(--bd);margin-top:8px}
+button.del{background:transparent;color:var(--bad);padding:6px 8px;font-size:14px;width:auto;margin:0}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--bd);font-size:15px}
+.row:last-child{border-bottom:0}.mut{color:var(--mut);font-size:13px}.num{font-weight:bold;white-space:nowrap}
+.bad{color:var(--bad)}.ok{color:var(--ok)}
+table{width:100%;border-collapse:collapse;font-size:15px}td,th{padding:10px 6px;border-bottom:1px solid var(--bd);text-align:right}th{color:var(--mut);font-size:13px}
+#toast{position:fixed;bottom:calc(20px + env(safe-area-inset-bottom,0px));left:50%;transform:translateX(-50%);background:var(--pri);color:#fff;padding:12px 18px;border-radius:12px;display:none;z-index:9;max-width:90%}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+</style></head><body>
+<div id="app"></div><div id="toast"></div>
+<script>
+let recs=[],coll=null,view='home',cfg={rate:15000},qs={n:'',f:'',t:''},js={f:'',t:''};
+const $=s=>document.getElementById(s),today=()=>new Date().toLocaleDateString('sv');
+const fm=n=>(Math.round(n*100)/100).toLocaleString('en'),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const of=t=>recs.filter(r=>r.t===t),V=id=>($(id)?.value||'').trim();
+const inr=(r,o)=>(!o.f||r.d>=o.f)&&(!o.t||r.d<=o.t);
+function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',2600)}
+function go(v){view=v;render();window.scrollTo(0,0)}
+function back(){return '<button class="ghost" onclick="go(\'home\')">← الرئيسية</button>'}
+function recent(t,fn){const a=of(t).sort((x,y)=>y.ts-x.ts).slice(0,15);
+ return `<div class="card"><div class="mut">آخر العمليات</div>${a.map(r=>`<div class="row"><div>${fn(r)}</div><button class="del" onclick="del('${r.id}',this)">حذف</button></div>`).join('')||'<div class="mut">لا توجد عمليات بعد</div>'}</div>`}
+function del(id,b){if(b.dataset.c){coll.doc(id).delete()}else{b.dataset.c=1;b.textContent='تأكيد؟';setTimeout(()=>{b.dataset.c='';b.textContent='حذف'},3000)}}
+const names=()=>[...new Set(of('sale').map(r=>r.c))];
+const dl=()=>`<datalist id="cl">${names().map(n=>`<option value="${esc(n)}">`).join('')}</datalist>`;
+
+function debts(o,name){const m={};const k=c=>c.trim();
+ of('sale').filter(r=>inr(r,o)&&(!name||k(r.c)===name)&&r.ty==='آجل').forEach(r=>m[k(r.c)]=(m[k(r.c)]||0)+r.a-(r.p||0));
+ of('pay').filter(r=>inr(r,o)&&(!name||k(r.c)===name)).forEach(r=>m[k(r.c)]=(m[k(r.c)]||0)-r.a);return m}
+
+function render(){const a=$('app');
+ if(!coll){a.innerHTML='<div class="card">يلزم فتح هذه الصفحة داخل تطبيق Claude مع تسجيل الدخول لحفظ البيانات.</div>';return}
+ a.innerHTML=({home,sale,purch,exp,query,jard})[view]();if(view==='query')res()}
+
+function home(){return `<h1>نظام المحاسبة</h1>
+<button class="big" onclick="go('sale')">المبيعات</button><button class="big" onclick="go('purch')">المشتريات</button>
+<button class="big" onclick="go('exp')">المصاريف</button><button class="big" onclick="go('query')">استعلام</button><button class="big" onclick="go('jard')">جرد</button>
+<div class="card"><label>سعر صرف الدولار اليوم</label><input id="rate" type="number" inputmode="decimal" value="${cfg.rate}" onchange="setRate(this.value)"></div>
+<div class="card"><div class="mut">نسخة احتياطية (احتفظ بها قبل حذف التطبيق أو تغيير الهاتف)</div><textarea id="bk" rows="3" style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--bd);border-radius:10px;background:var(--in);color:var(--tx)" placeholder="الصق هنا نص النسخة الاحتياطية لاستعادتها"></textarea><div class="two"><button class="ghost" onclick="backup()">نسخ البيانات</button><button class="ghost" onclick="restore()">استعادة</button></div></div>`}
+function setRate(v){v=parseFloat(v);if(v>0){coll.doc('cfg').set({t:'cfg',rate:v});toast('تم حفظ سعر الصرف')}}
+
+function sale(){return `<h2>المبيعات</h2><div class="card">${dl()}
+<label>اسم العميل</label><input id="s1" list="cl"><label>اسم المادة</label><input id="s2">
+<label>المبلغ</label><input id="s3" type="number" inputmode="decimal"><label>نقدي / آجل</label>
+<select id="s4" onchange="$('pw').style.display=this.value==='آجل'?'block':'none'"><option>نقدي</option><option>آجل</option></select>
+<div id="pw" style="display:none"><label>المدفوع الآن (اختياري)</label><input id="s5" type="number" inputmode="decimal"></div>
+<label>التاريخ</label><input id="s6" type="date" value="${today()}"><button onclick="postSale()">ترحيل</button></div>
+${recent('sale',r=>`${esc(r.c)} · ${esc(r.i)}<div class="mut">${r.d} · ${r.ty} · <span class="num">${fm(r.a)}</span></div>`)}${back()}`}
+function postSale(){const c=V('s1'),i=V('s2'),a=parseFloat(V('s3')),ty=V('s4'),p=parseFloat(V('s5'))||0,d=V('s6');
+ if(!c||!i||!(a>0)||!d)return toast('يرجى تعبئة كل الخانات بشكل صحيح');
+ if(p<0||p>a)return toast('المبلغ المدفوع غير صحيح');
+ coll.add({t:'sale',c,i,a,ty,p:ty==='آجل'?p:0,d,ts:Date.now()});toast('تم ترحيل عملية البيع')}
+
+function purch(){return `<h2>المشتريات</h2><div class="card">
+<label>اسم المادة</label><input id="p1"><label>سعر المادة بالدولار</label><input id="p2" type="number" inputmode="decimal">
+<label>سعر صرف اليوم للدولار</label><input id="p3" type="number" inputmode="decimal" value="${cfg.rate}">
+<label>الكمية / العدد</label><input id="p4" type="number" inputmode="decimal"><label>التاريخ</label><input id="p5" type="date" value="${today()}">
+<button onclick="postPurch()">ترحيل</button></div>
+${recent('purch',r=>`${esc(r.i)} × ${r.q}<div class="mut">${r.d} · $${fm(r.u)} · صرف ${fm(r.x)} · <span class="num">${fm(r.u*r.q*r.x)}</span></div>`)}${back()}`}
+function postPurch(){const i=V('p1'),u=parseFloat(V('p2')),x=parseFloat(V('p3')),q=parseFloat(V('p4')),d=V('p5');
+ if(!i||!(u>0)||!(x>0)||!(q>0)||!d)return toast('يرجى تعبئة كل الخانات بشكل صحيح');
+ coll.add({t:'purch',i,u,x,q,d,ts:Date.now()});toast('تم ترحيل عملية الشراء')}
+
+function exp(){return `<h2>المصاريف</h2><div class="card"><label>الاسم</label><input id="e1"><label>المبلغ</label><input id="e2" type="number" inputmode="decimal">
+<label>التاريخ</label><input id="e3" type="date" value="${today()}"><button onclick="postExp()">ترحيل</button></div>
+${recent('exp',r=>`${esc(r.n)}<div class="mut">${r.d} · <span class="num">${fm(r.a)}</span></div>`)}${back()}`}
+function postExp(){const n=V('e1'),a=parseFloat(V('e2')),d=V('e3');
+ if(!n||!(a>0)||!d)return toast('يرجى تعبئة كل الخانات بشكل صحيح');
+ coll.add({t:'exp',n,a,d,ts:Date.now()});toast('تم ترحيل المصروف')}
+
+function query(){return `<h2>استعلام</h2><div class="card">${dl()}
+<label>اسم العميل (اتركه فارغا لعرض كل المديونين)</label><input id="q1" list="cl" value="${esc(qs.n)}" oninput="qs.n=this.value.trim();res()">
+<div class="two"><div><label>من تاريخ</label><input id="q2" type="date" value="${qs.f}" onchange="qs.f=this.value;res()"></div>
+<div><label>إلى تاريخ</label><input id="q3" type="date" value="${qs.t}" onchange="qs.t=this.value;res()"></div></div></div>
+<div id="res"></div>${back()}`}
+function res(){const el=$('res');if(!el)return;const n=qs.n,m=debts(qs,n);
+ const ss=of('sale').filter(r=>inr(r,qs)&&(!n||r.c.trim()===n)),ps=of('pay').filter(r=>inr(r,qs)&&(!n||r.c.trim()===n));
+ const tot=ss.reduce((s,r)=>s+r.a,0),dt=Object.values(m).reduce((s,v)=>s+v,0);
+ const dd=Object.entries(m).filter(([k,v])=>v>0.005).sort((a,b)=>b[1]-a[1]);
+ const st=[...ss.map(r=>({d:r.d,x:`${esc(r.i)} (${r.ty}) ${fm(r.a)}`+(r.p?` · دفع ${fm(r.p)}`:'')})),...ps.map(r=>({d:r.d,x:`<span class="ok">تسديد ${fm(r.a)}</span>`}))].sort((a,b)=>b.d.localeCompare(a.d));
+ el.innerHTML=`<div class="card"><div class="row"><span>إجمالي المبيعات</span><span class="num">${fm(tot)}</span></div>
+<div class="row"><span>إجمالي الديون</span><span class="num bad">${fm(dt)}</span></div></div>
+<div class="card"><div class="mut">العملاء المديونون</div>${dd.map(([k,v],i)=>`<div class="row" style="flex-wrap:wrap"><b>${esc(k)}</b><span class="num bad">${fm(v)}</span>
+<input id="pay${i}" type="number" inputmode="decimal" placeholder="مبلغ التسديد" style="flex:1;padding:8px"><button class="sm" onclick="payDebt(${i},'${esc(k).replace(/'/g,"\\'")}')">تسديد</button></div>`).join('')||'<div class="mut">لا توجد ديون</div>'}</div>
+${n?`<div class="card"><div class="mut">كشف حساب ${esc(n)}</div>${st.map(r=>`<div class="row"><span>${r.x}</span><span class="mut">${r.d}</span></div>`).join('')||'<div class="mut">لا توجد عمليات</div>'}</div>`:''}`}
+function payDebt(i,c){const a=parseFloat(V('pay'+i));if(!(a>0))return toast('اكتب مبلغ التسديد');coll.add({t:'pay',c,a,d:today(),ts:Date.now()});toast('تم تسجيل التسديد')}
+
+function jard(){const o=js,r=cfg.rate;
+ const S=of('sale').filter(x=>inr(x,o)).reduce((s,x)=>s+x.a,0),PU=of('purch').filter(x=>inr(x,o)).reduce((s,x)=>s+x.u*x.q,0),
+ P=of('purch').filter(x=>inr(x,o)).reduce((s,x)=>s+x.u*x.q*x.x,0),E=of('exp').filter(x=>inr(x,o)).reduce((s,x)=>s+x.a,0),
+ D=Object.values(debts(o,'')).reduce((s,v)=>s+v,0),u=v=>r>0?v/r:0;
+ const row=(l,a,b,c='')=>`<tr><td>${l}</td><td class="num ${c}">${fm(a)}</td><td class="num ${c}">$${fm(b)}</td></tr>`;
+ return `<h2>جرد</h2><div class="card"><div class="two"><div><label>من تاريخ</label><input type="date" value="${js.f}" onchange="js.f=this.value;render()"></div>
+<div><label>إلى تاريخ</label><input type="date" value="${js.t}" onchange="js.t=this.value;render()"></div></div></div>
+<div class="card"><table><tr><th></th><th>محلي</th><th>دولار</th></tr>${row('إجمالي المبيعات',S,u(S))}${row('إجمالي المشتريات',P,PU)}${row('إجمالي المصاريف',E,u(E))}
+${row('إجمالي الديون',D,u(D),'bad')}${row('إجمالي الأرباح',S-P-E,u(S)-PU-u(E),S-P-E>=0?'ok':'bad')}</table>
+<p class="mut">الأرباح = المبيعات − المشتريات − المصاريف. المشتريات بالدولار بأسعارها الأصلية، والباقي يُحوَّل بسعر صرف اليوم (${fm(r)}).</p></div>${back()}`}
+
+const KEY='acc_v1';
+try{const st=JSON.parse(localStorage.getItem(KEY)||'{}');recs=st.recs||[];if(st.cfg&&st.cfg.rate)cfg=st.cfg}catch(e){}
+const save=()=>{try{localStorage.setItem(KEY,JSON.stringify({recs,cfg}))}catch(e){toast('تعذر حفظ البيانات: المساحة ممتلئة')}};
+coll={add(o){o.id='r'+Date.now()+Math.random().toString(36).slice(2,6);recs.push(o);save();render();return Promise.resolve()},
+ doc(id){return{delete(){recs=recs.filter(r=>r.id!==id);save();render()},set(o){cfg={rate:o.rate};save()}}}};
+function backup(){const t=$('bk');t.value=JSON.stringify({recs,cfg});t.focus();t.select();try{document.execCommand('copy');toast('تم نسخ البيانات: الصقها في ملاحظات أو أرسلها لنفسك')}catch(e){toast('حدّد النص وانسخه يدويا')}}
+function restore(){const v=$('bk').value.trim();try{const o=JSON.parse(v);if(!Array.isArray(o.recs))throw 0;recs=o.recs;if(o.cfg&&o.cfg.rate)cfg=o.cfg;save();render();toast('تمت استعادة البيانات')}catch(e){toast('الصق نص النسخة الاحتياطية أولا')}}
+render();
+</script></body></html>
