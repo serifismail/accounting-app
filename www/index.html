@@ -27,6 +27,11 @@ table{width:100%;border-collapse:collapse;font-size:15px}td,th{padding:10px 6px;
 .fixbar{position:fixed;bottom:0;left:0;right:0;padding:10px 14px calc(10px + env(safe-area-inset-bottom,0px));background:var(--bg);border-top:1px solid var(--bd);z-index:5}
 .fixbar button{display:block;max-width:532px;margin:0 auto}
 .credit{text-align:center;color:var(--mut);font-size:13px;margin:16px 0}
+.deb{padding:12px 0;border-bottom:1px solid var(--bd)}.deb:last-child{border-bottom:0}
+.payrow{display:flex;gap:8px;margin-top:8px}.payrow input{flex:1;min-width:0}.payrow select{width:110px;flex:none}.payrow button{flex:1;margin:0}
+#ov{display:none;position:fixed;inset:0;z-index:30;background:var(--bg);overflow:auto}
+.pv{max-width:620px;margin:auto;padding:0 10px 30px}.pvbar{position:sticky;top:0;background:var(--bg);padding:10px 0;display:flex;gap:8px;z-index:2;padding-top:calc(10px + env(safe-area-inset-top,0px))}.pvbar button{margin:0}.pv img{width:100%;display:block;margin-bottom:10px;border:1px solid var(--bd);background:#fff}
+.dlg{padding:30px 16px;max-width:420px;margin:auto}
 </style></head><body>
 <div id="app"></div><div id="toast"></div>
 <script>
@@ -65,7 +70,9 @@ function home(){return `<h1>نظام المحاسبة</h1>
 <button class="big" onclick="go('sale')">المبيعات</button><button class="big" onclick="go('purch')">المشتريات</button>
 <button class="big" onclick="go('exp')">المصاريف</button><button class="big" onclick="go('query')">استعلام</button><button class="big" onclick="go('jard')">جرد</button>
 <div class="card"><label>سعر صرف الدولار اليوم</label><input id="rate" type="number" inputmode="decimal" value="${cfg.rate}" onchange="setRate(this.value)"></div>
-<div class="card"><div class="mut">نسخة احتياطية (احتفظ بها قبل حذف التطبيق أو تغيير الهاتف)</div><textarea id="bk" rows="3" style="width:100%;margin-top:8px;padding:8px;border:1px solid var(--bd);border-radius:10px;background:var(--in);color:var(--tx)" placeholder="الصق هنا نص النسخة الاحتياطية لاستعادتها"></textarea><div class="two"><button class="ghost" onclick="backup()">نسخ البيانات</button><button class="ghost" onclick="restore()">استعادة</button></div></div><div class="credit">تصميم : شريف ابو ايمن</div>`}
+<div class="card"><div class="mut">النسخة الاحتياطية (احتفظ بها قبل حذف التطبيق أو تغيير الهاتف)</div>
+<div class="two" style="margin-top:8px"><button class="ghost" onclick="exportBackup()">تصدير نسخة (ملف)</button><button class="ghost" onclick="$('bf').click()">استيراد نسخة</button></div>
+<input id="bf" type="file" accept=".json,application/json,text/plain" style="display:none" onchange="importBackup(this)"></div><div class="credit">تصميم : شريف ابو ايمن</div>`}
 function setRate(v){v=parseFloat(v);if(v>0){coll.doc('cfg').set({t:'cfg',rate:v});toast('تم حفظ سعر الصرف')}}
 
 function sale(){return `<h2>المبيعات</h2><div class="card">${dl()}
@@ -109,10 +116,11 @@ function res(){const el=$('res');if(!el)return;const n=qs.n,m=debts(qs,n),R=cfg.
  el.innerHTML=`<div class="card"><div class="row"><span>إجمالي المبيعات</span><span class="num">${fm(tl)} · $${fm(tu)}</span></div>
 <div class="row"><span>إجمالي الديون (بالدولار)</span><span class="num bad">$${fm(du)}</span></div>
 <div class="row"><span>المطلوب تحصيله اليوم (بصرف ${fm(R)})</span><span class="num bad">${fm(du*R)}</span></div></div>
-<div class="card"><div class="mut">العملاء المديونون (الدين ثابت بالدولار بسعر يوم الاستدانة)</div>${dd.map(([k,v],i)=>`<div class="row" style="flex-wrap:wrap"><b>${esc(k)}</b><span class="num bad">$${fm(v)} ≈ ${fm(v*R)}</span>
-<input id="pay${i}" type="number" inputmode="decimal" placeholder="مبلغ التسديد" style="flex:1;padding:8px"><select id="pc${i}" style="width:auto;padding:8px"><option>محلي</option><option>دولار</option></select><button class="sm" onclick="payDebt(${i},'${esc(k).replace(/'/g,"\\'")}')">تسديد</button></div>`).join('')||'<div class="mut">لا توجد ديون</div>'}</div>
+<div class="card"><div class="mut">العملاء المديونون (الدين ثابت بالدولار بسعر يوم الاستدانة)</div>${dd.map(([k,v],i)=>`<div class="deb"><div class="row" style="border:0;padding:0"><b>${esc(k)}</b><span class="num bad">$${fm(v)} ≈ ${fm(v*R)}</span></div>
+<div class="payrow"><input id="pay${i}" type="number" inputmode="decimal" placeholder="مبلغ التسديد"><select id="pc${i}"><option>محلي</option><option>دولار</option></select></div>
+<div class="payrow"><button class="sm" onclick="payDebt(${i},'${esc(k).replace(/'/g,"\\'")}')">تسديد</button><button class="sm ghost" onclick="invoice('${esc(k).replace(/'/g,"\\'")}')">فاتورة PDF</button></div></div>`).join('')||'<div class="mut">لا توجد ديون</div>'}</div>
 <div class="card"><div class="mut">آخر التسديدات</div>${[...ps].sort((a,b)=>b.ts-a.ts).slice(0,10).map(r=>`<div class="row"><span>${esc(r.c)} · ${r.d} · <span class="num ok">${fm(r.a)} = $${fm(r.a/rx(r))}</span></span><button class="del" onclick="del('${r.id}',this)">حذف</button></div>`).join('')||'<div class="mut">لا توجد تسديدات</div>'}</div>
-${n?`<div class="card"><div class="mut">كشف حساب ${esc(n)}</div>${st.map(r=>`<div class="row"><span>${r.x}</span><span class="mut">${r.d}</span></div>`).join('')||'<div class="mut">لا توجد عمليات</div>'}</div>`:''}`}
+${n?`<div class="card"><div class="mut">كشف حساب ${esc(n)}</div><button class="sm" style="width:100%;margin:8px 0" onclick="invoice('${esc(n).replace(/'/g,"\\'")}')">فاتورة PDF لهذا العميل</button>${st.map(r=>`<div class="row"><span>${r.x}</span><span class="mut">${r.d}</span></div>`).join('')||'<div class="mut">لا توجد عمليات</div>'}</div>`:''}`}
 function payDebt(i,c){let a=parseFloat(V('pay'+i));const x=cfg.rate;if(!(a>0)||!(x>0))return toast('اكتب مبلغ التسديد');
  if(V('pc'+i)==='دولار')a=a*x;coll.add({t:'pay',c,a,x,d:today(),ts:Date.now()});toast('تم تسجيل التسديد بسعر صرف اليوم')}
 
@@ -128,13 +136,114 @@ function jard(){const o=js,r=cfg.rate,f=a=>a.filter(x=>inr(x,o)),sa=f(of('sale')
 <div class="card"><table><tr><th></th><th>محلي</th><th>دولار</th></tr>${row('إجمالي المبيعات',SL,SU)}${row('إجمالي المشتريات',PL,PU)}${row('إجمالي المصاريف',EL,EU)}
 ${row('إجمالي الديون (بصرف اليوم)',DU*r,DU,'bad')}${row('إجمالي الأرباح',PRL,PRU,PRU>=0?'ok':'bad')}</table>
 <p class="mut">كل عملية تُحسب بسعر صرفها وقت تسجيلها، وإجمالي الأرباح هو مجموع أرباح الأيام. الديون ثابتة بالدولار وتُقدَّر بالمحلي بصرف اليوم (${fm(r)}).</p></div>
-<div class="card"><div class="mut">الأرباح اليومية</div><table><tr><th>اليوم</th><th>محلي</th><th>دولار</th></tr>${Object.keys(dy).sort().reverse().map(d=>`<tr><td>${d}</td><td class="num ${dy[d].u>=0?'ok':'bad'}">${fm(dy[d].l)}</td><td class="num ${dy[d].u>=0?'ok':'bad'}">$${fm(dy[d].u)}</td></tr>`).join('')||'<tr><td colspan="3" class="mut">لا توجد عمليات</td></tr>'}</table></div>${back()}`}
+<div class="card"><div class="mut">الأرباح اليومية</div><table><tr><th>اليوم</th><th>محلي</th><th>دولار</th></tr>${Object.keys(dy).sort().reverse().map(d=>`<tr><td>${d}</td><td class="num ${dy[d].u>=0?'ok':'bad'}">${fm(dy[d].l)}</td><td class="num ${dy[d].u>=0?'ok':'bad'}">$${fm(dy[d].u)}</td></tr>`).join('')||'<tr><td colspan="3" class="mut">لا توجد عمليات</td></tr>'}</table></div>
+<div class="card"><div class="two"><button onclick="reportPdf()">تقرير PDF</button><button onclick="exportExcel()">تصدير Excel</button></div></div>${back()}`}
 const KEY='acc_v1';
 try{const st=JSON.parse(localStorage.getItem(KEY)||'{}');recs=st.recs||[];if(st.cfg&&st.cfg.rate)cfg=st.cfg}catch(e){}
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify({recs,cfg}))}catch(e){toast('تعذر حفظ البيانات: المساحة ممتلئة')}};
 coll={add(o){o.id='r'+Date.now()+Math.random().toString(36).slice(2,6);recs.push(o);save();render();return Promise.resolve()},
  doc(id){return{delete(){recs=recs.filter(r=>r.id!==id);purge();save();render()},set(o){cfg={rate:o.rate};save()}}}};
-function backup(){const t=$('bk');t.value=JSON.stringify({recs,cfg});t.focus();t.select();try{document.execCommand('copy');toast('تم نسخ البيانات: الصقها في ملاحظات أو أرسلها لنفسك')}catch(e){toast('حدّد النص وانسخه يدويا')}}
-function restore(){const v=$('bk').value.trim();try{const o=JSON.parse(v);if(!Array.isArray(o.recs))throw 0;recs=o.recs;if(o.cfg&&o.cfg.rate)cfg=o.cfg;purge();save();render();toast('تمت استعادة البيانات')}catch(e){toast('الصق نص النسخة الاحتياطية أولا')}}
+/* ===== ملفات: حفظ/مشاركة ===== */
+function b64(u){let s='';for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(s)}
+async function saveFile(name,bytes,mime){
+ const C=window.Capacitor,P=C&&C.Plugins;
+ try{if(C&&C.isNativePlatform&&C.isNativePlatform()&&P&&P.Filesystem&&P.Share){
+   const r=await P.Filesystem.writeFile({path:name,data:b64(bytes),directory:'CACHE'});
+   await P.Share.share({title:name,url:r.uri,dialogTitle:name});return}}
+ catch(e){if(/cancel/i.test((e&&e.message)||''))return}
+ const blob=new Blob([bytes],{type:mime});
+ try{const f=new File([blob],name,{type:mime});if(navigator.canShare&&navigator.canShare({files:[f]})){await navigator.share({files:[f],title:name});return}}
+ catch(e){if(e&&e.name==='AbortError')return}
+ const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();a.remove();toast('تم إنشاء الملف: '+name)}
+function modal(inner){let o=$('ov');if(!o){o=document.createElement('div');o.id='ov';document.body.appendChild(o)}o.innerHTML=inner;o.style.display='block'}
+function closeModal(){const o=$('ov');if(o)o.style.display='none'}
+function ask(msg,fn){window._ok=fn;modal(`<div class="dlg"><div class="card"><p>${msg}</p><div class="two"><button onclick="closeModal();window._ok()">نعم</button><button class="ghost" onclick="closeModal()">إلغاء</button></div></div></div>`)}
+
+/* ===== النسخة الاحتياطية (ملف) ===== */
+function exportBackup(){const j=JSON.stringify({v:2,recs,cfg});saveFile('SerifEymen-backup-'+today()+'.json',new TextEncoder().encode(j),'application/json')}
+function importBackup(inp){const f=inp.files&&inp.files[0];if(!f)return;const r=new FileReader();
+ r.onload=()=>{inp.value='';let o;try{o=JSON.parse(r.result);if(!Array.isArray(o.recs))throw 0}catch(e){return toast('الملف غير صالح')}
+  ask(`سيتم استبدال البيانات الحالية بالنسخة المختارة (${o.recs.length} سجل). هل تريد المتابعة؟`,()=>{recs=o.recs;if(o.cfg&&o.cfg.rate)cfg=o.cfg;purge();save();render();toast('تمت استعادة البيانات')})};
+ r.readAsText(f)}
+
+/* ===== Excel (xlsx بدون مكتبات) ===== */
+function crc32(b){const t=crc32.t||(crc32.t=Array.from({length:256},(_,n)=>{let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;return c>>>0}));let r=-1;for(let i=0;i<b.length;i++)r=t[(r^b[i])&255]^(r>>>8);return(r^-1)>>>0}
+function zip(files){const enc=new TextEncoder(),loc=[],cen=[];let off=0;
+ files.forEach(f=>{const nm=enc.encode(f.name),d=enc.encode(f.data),crc=crc32(d);
+  const h=new DataView(new ArrayBuffer(30));h.setUint32(0,0x04034b50,true);h.setUint16(4,20,true);h.setUint16(6,0x0800,true);h.setUint16(12,0x21,true);h.setUint32(14,crc,true);h.setUint32(18,d.length,true);h.setUint32(22,d.length,true);h.setUint16(26,nm.length,true);
+  loc.push(new Uint8Array(h.buffer),nm,d);
+  const c=new DataView(new ArrayBuffer(46));c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);c.setUint16(8,0x0800,true);c.setUint16(14,0x21,true);c.setUint32(16,crc,true);c.setUint32(20,d.length,true);c.setUint32(24,d.length,true);c.setUint16(28,nm.length,true);c.setUint32(42,off,true);
+  cen.push(new Uint8Array(c.buffer),nm);off+=30+nm.length+d.length});
+ const cs=cen.reduce((s,b)=>s+b.length,0),e=new DataView(new ArrayBuffer(22));e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,cs,true);e.setUint32(16,off,true);
+ const all=[...loc,...cen,new Uint8Array(e.buffer)],o=new Uint8Array(all.reduce((s,b)=>s+b.length,0));let p=0;all.forEach(b=>{o.set(b,p);p+=b.length});return o}
+const xe=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const col=i=>{let s='';for(i++;i>0;i=Math.floor((i-1)/26))s=String.fromCharCode(65+(i-1)%26)+s;return s};
+function sheetXml(rows){return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView rightToLeft="1" workbookViewId="0"/></sheetViews><cols><col min="1" max="8" width="20" customWidth="1"/></cols><sheetData>'+
+ rows.map((r,i)=>`<row r="${i+1}">`+r.map((v,j)=>v===''||v==null?'':(typeof v==='number'?`<c r="${col(j)}${i+1}"><v>${v}</v></c>`:`<c r="${col(j)}${i+1}" t="inlineStr"><is><t>${xe(v)}</t></is></c>`)).join('')+'</row>').join('')+'</sheetData></worksheet>'}
+function xlsx(sheets){const n=sheets.length,F=[
+ {name:'[Content_Types].xml',data:'<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+sheets.map((_,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')+'</Types>'},
+ {name:'_rels/.rels',data:'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'},
+ {name:'xl/workbook.xml',data:'<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'+sheets.map((s,i)=>`<sheet name="${xe(s.n)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')+'</sheets></workbook>'},
+ {name:'xl/_rels/workbook.xml.rels',data:'<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+sheets.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')+'</Relationships>'}];
+ sheets.forEach((s,i)=>F.push({name:`xl/worksheets/sheet${i+1}.xml`,data:sheetXml(s.r)}));return zip(F)}
+function exportExcel(){const o={f:'',t:''},sd=(a,k)=>of(a).sort((x,y)=>x.d.localeCompare(y.d)),m=debts(o,'');
+ const S=[{n:'المبيعات',r:[['التاريخ','العميل','المادة','المبلغ (محلي)','سعر الصرف','المبلغ ($)','نقدي/آجل','المدفوع (محلي)'],...sd('sale').map(r=>[r.d,r.c,r.i,r.a,rx(r),rd(r.a/rx(r)),r.ty,r.p||0])]},
+ {n:'المشتريات',r:[['التاريخ','المادة','الكمية','سعر الوحدة ($)','سعر الصرف','الإجمالي ($)','الإجمالي (محلي)'],...sd('purch').map(r=>[r.d,r.i,r.q,r.u,rx(r),rd(r.u*r.q),rd(r.u*r.q*rx(r))])]},
+ {n:'المصاريف',r:[['التاريخ','الاسم','المبلغ (محلي)','سعر الصرف','المبلغ ($)'],...sd('exp').map(r=>[r.d,r.n,r.a,rx(r),rd(r.a/rx(r))])]},
+ {n:'التسديدات',r:[['التاريخ','العميل','المبلغ (محلي)','سعر الصرف','المبلغ ($)'],...sd('pay').map(r=>[r.d,r.c,r.a,rx(r),rd(r.a/rx(r))])]},
+ {n:'الديون',r:[['العميل','الدين ($)','المطلوب اليوم (محلي)'],...Object.entries(m).map(([k,v])=>[k,rd(v),rd(v*cfg.rate)])]}];
+ saveFile('SerifEymen-data-'+today()+'.xlsx',xlsx(S),'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')}
+
+/* ===== PDF (رسم على canvas ثم تجميع PDF بدون مكتبات) ===== */
+function pdfFrom(imgs){const enc=new TextEncoder(),parts=[],offs=[];let len=0;const push=b=>{if(typeof b==='string')b=enc.encode(b);parts.push(b);len+=b.length};
+ const obj=(id,fn)=>{offs[id]=len;push(id+' 0 obj\n');fn();push('\nendobj\n')},n=imgs.length;
+ push('%PDF-1.4\n');obj(1,()=>push('<< /Type /Catalog /Pages 2 0 R >>'));
+ obj(2,()=>push('<< /Type /Pages /Kids ['+imgs.map((_,i)=>(5+3*i)+' 0 R').join(' ')+'] /Count '+n+' >>'));
+ imgs.forEach((im,i)=>{obj(3+3*i,()=>{push(`<< /Type /XObject /Subtype /Image /Width ${im.w} /Height ${im.h} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${im.b.length} >>\nstream\n`);push(im.b);push('\nendstream')});
+  const c=`q 595 0 0 842 0 0 cm /Im${i} Do Q`;obj(4+3*i,()=>push(`<< /Length ${c.length} >>\nstream\n${c}\nendstream`));
+  obj(5+3*i,()=>push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /XObject << /Im${i} ${3+3*i} 0 R >> >> /Contents ${4+3*i} 0 R >>`))});
+ const tot=3*n+3,xr=len;push(`xref\n0 ${tot}\n0000000000 65535 f \n`);for(let i=1;i<tot;i++)push(String(offs[i]).padStart(10,'0')+' 00000 n \n');
+ push(`trailer\n<< /Size ${tot} /Root 1 0 R >>\nstartxref\n${xr}\n%%EOF`);
+ const o=new Uint8Array(len);let p=0;parts.forEach(b=>{o.set(b,p);p+=b.length});return o}
+function renderDoc(d){const W=1190,H=1684,M=60,RH=46,pages=[];let cv,x,y;
+ const np=()=>{cv=document.createElement('canvas');cv.width=W;cv.height=H;x=cv.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,W,H);x.direction='rtl';x.textBaseline='middle';pages.push(cv);y=M;
+  if(pages.length===1){x.fillStyle='#1F3864';x.fillRect(0,0,W,170);x.fillStyle='#fff';x.textAlign='right';x.font='bold 46px Arial';x.fillText(d.title,W-M,62);x.font='26px Arial';x.fillText(d.brand,W-M,116);x.textAlign='left';x.fillText(d.date,M,116);y=200;
+   x.fillStyle='#1b1f2a';x.textAlign='right';x.font='bold 30px Arial';(d.info||[]).forEach(t=>{x.fillText(t,W-M,y+18);y+=44});y+=10}};
+ const fit=(t,w)=>{t=String(t);while(x.measureText(t).width>w&&t.length>1)t=t.slice(0,-2);return t},
+ head=(cols)=>{x.fillStyle='#1F3864';x.fillRect(M,y,W-2*M,RH);x.fillStyle='#fff';x.font='bold 22px Arial';x.textAlign='center';let r=W-M;cols.forEach(c=>{x.fillText(c.h,r-c.w/2,y+RH/2);r-=c.w});y+=RH},
+ sec=t=>{if(y+120>H-110)np();x.fillStyle='#1F3864';x.textAlign='right';x.font='bold 30px Arial';x.fillText(t,W-M,y+20);y+=50};
+ np();
+ d.blocks.forEach(b=>{if(b.title)sec(b.title);
+  if(b.kv){b.kv.forEach((kv,i)=>{if(y+RH>H-110)np();x.fillStyle=i%2?'#fff':'#eef2fa';x.fillRect(M,y,W-2*M,RH);x.fillStyle='#1b1f2a';x.font='24px Arial';x.textAlign='right';x.fillText(kv[0],W-M-14,y+RH/2);x.font='bold 24px Arial';x.textAlign='left';x.fillText(kv[1],M+14,y+RH/2);y+=RH});y+=24}
+  else{const cols=b.cols.map(c=>({h:c.h,w:c.w*(W-2*M)}));head(cols);
+   b.rows.forEach((row,i)=>{if(y+RH>H-110){np();head(cols)}x.fillStyle=i%2?'#fff':'#eef2fa';x.fillRect(M,y,W-2*M,RH);x.fillStyle='#1b1f2a';x.font='22px Arial';x.textAlign='center';let r=W-M;
+    row.forEach((v,j)=>{x.fillStyle=(row.cls&&row.cls[j])||'#1b1f2a';x.fillText(fit(v,cols[j].w-10),r-cols[j].w/2,y+RH/2);r-=cols[j].w});y+=RH});
+   if(!b.rows.length){x.fillStyle='#6b7280';x.textAlign='center';x.font='22px Arial';x.fillText('لا توجد بيانات',W/2,y+RH/2);y+=RH}y+=28}});
+ pages.forEach((c,i)=>{const g=c.getContext('2d');g.direction='rtl';g.textBaseline='middle';g.textAlign='center';g.fillStyle='#6b7280';g.font='20px Arial';g.fillText('تصميم : شريف ابو ايمن',W/2,H-60);g.fillText((i+1)+' / '+pages.length,W/2,H-30)});
+ return pages}
+function showDoc(d,fname){let pages;try{pages=renderDoc(d)}catch(e){return toast('تعذر إنشاء الملف')}
+ const imgs=pages.map(c=>{const u=c.toDataURL('image/jpeg',0.92),s=atob(u.split(',')[1]),b=new Uint8Array(s.length);for(let i=0;i<s.length;i++)b[i]=s.charCodeAt(i);return{b,w:c.width,h:c.height,u}});
+ window._pdf=()=>saveFile(fname,pdfFrom(imgs),'application/pdf');
+ modal(`<div class="pv"><div class="pvbar"><button onclick="_pdf()">مشاركة / حفظ PDF</button><button class="ghost" onclick="closeModal()">إغلاق</button></div>${imgs.map(i=>`<img src="${i.u}" alt="">`).join('')}</div>`)}
+
+/* ===== فاتورة عميل وتقرير الجرد ===== */
+function invoice(name){const o=qs,k=c=>c.trim(),ss=of('sale').filter(r=>inr(r,o)&&k(r.c)===name),ps=of('pay').filter(r=>inr(r,o)&&k(r.c)===name);
+ const ev=[...ss.map(r=>({d:r.d,ts:r.ts,s:r})),...ps.map(r=>({d:r.d,ts:r.ts,p:r}))].sort((a,b)=>a.d.localeCompare(b.d)||a.ts-b.ts);
+ let bal=0,tS=0,tP=0;const rows=ev.map(e=>{if(e.s){const r=e.s,u=r.a/rx(r),paid=(r.p||0)/rx(r);tS+=u;if(r.ty==='آجل'){tP+=paid;bal+=u-paid}
+   return[e.d,'بيع: '+r.i+' ('+r.ty+')'+(r.p?' - دفع '+fm(r.p):''),fm(r.a),'$'+fm(u),fm(rx(r)),'$'+fm(bal)]}
+  const r=e.p,u=r.a/rx(r);tP+=u;bal-=u;const row=[e.d,'تسديد',fm(r.a),'$'+fm(u),fm(rx(r)),'$'+fm(bal)];row.cls={1:'#1e7a3c'};return row});
+ const due=Math.max(0,bal);
+ showDoc({title:'فاتورة / كشف حساب',brand:'SerifAyman',date:today(),info:['العميل: '+name].concat(o.f||o.t?['الفترة: '+(o.f||'...')+' إلى '+(o.t||'...')]:[]),
+  blocks:[{title:'حركات الحساب',cols:[{h:'التاريخ',w:.15},{h:'البيان',w:.30},{h:'المبلغ (محلي)',w:.17},{h:'بالدولار',w:.13},{h:'سعر الصرف',w:.12},{h:'الرصيد ($)',w:.13}],rows},
+   {title:'الملخص',kv:[['إجمالي المشتريات','$'+fm(tS)],['إجمالي المدفوع والتسديدات','$'+fm(tP)],['الرصيد المتبقي بالدولار','$'+fm(due)],['المطلوب اليوم بالمحلي (بصرف '+fm(cfg.rate)+')',fm(due*cfg.rate)]]}]},'invoice-'+name.replace(/[^\w\u0600-\u06FF]+/g,'_')+'-'+today()+'.pdf')}
+function reportPdf(){const o=js,f=a=>a.filter(x=>inr(x,o)),sa=f(of('sale')),pu=f(of('purch')),ex=f(of('exp')),pl=x=>x.u*x.q*rx(x),su=(a,g)=>a.reduce((s,x)=>s+g(x),0);
+ const SL=su(sa,x=>x.a),SU=su(sa,x=>x.a/rx(x)),PL=su(pu,pl),PU=su(pu,x=>x.u*x.q),EL=su(ex,x=>x.a),EU=su(ex,x=>x.a/rx(x)),m=debts(o,''),DU=Object.values(m).reduce((s,v)=>s+v,0),dy={};
+ const day=(d,l,u)=>{(dy[d]=dy[d]||{l:0,u:0});dy[d].l+=l;dy[d].u+=u};sa.forEach(x=>day(x.d,x.a,x.a/rx(x)));pu.forEach(x=>day(x.d,-pl(x),-x.u*x.q));ex.forEach(x=>day(x.d,-x.a,-x.a/rx(x)));
+ const L=v=>fm(v),U=v=>'$'+fm(v);
+ showDoc({title:'تقرير الجرد',brand:'SerifAyman',date:today(),info:o.f||o.t?['الفترة: '+(o.f||'...')+' إلى '+(o.t||'...')]:['كل الفترات'],
+  blocks:[{title:'الإجماليات (محلي / دولار)',cols:[{h:'البند',w:.4},{h:'محلي',w:.3},{h:'دولار',w:.3}],rows:[['إجمالي المبيعات',L(SL),U(SU)],['إجمالي المشتريات',L(PL),U(PU)],['إجمالي المصاريف',L(EL),U(EU)],['إجمالي الديون (بصرف اليوم)',L(DU*cfg.rate),U(DU)],['إجمالي الأرباح',L(SL-PL-EL),U(SU-PU-EU)]]},
+   {title:'الأرباح اليومية',cols:[{h:'اليوم',w:.4},{h:'محلي',w:.3},{h:'دولار',w:.3}],rows:Object.keys(dy).sort().reverse().map(d=>[d,L(dy[d].l),U(dy[d].u)])},
+   {title:'العملاء المديونون',cols:[{h:'العميل',w:.4},{h:'الدين ($)',w:.3},{h:'المطلوب اليوم (محلي)',w:.3}],rows:Object.entries(m).sort((a,b)=>b[1]-a[1]).map(([k,v])=>[k,U(v),L(v*cfg.rate)])}]},'report-'+today()+'.pdf')}
+
 purge();save();render();
 </script></body></html>
